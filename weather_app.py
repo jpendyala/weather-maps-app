@@ -4,6 +4,7 @@ from geopy.distance import geodesic
 from dotenv import load_dotenv
 import os
 import logging
+from datetime import datetime, timedelta
 
 class WeatherRouteApp:
     def __init__(self):
@@ -30,12 +31,15 @@ class WeatherRouteApp:
                 data = request.get_json()
                 source = data['source']
                 destination = data['destination']
+                travel_time = data['travel_time']
+                alternate_routes = data['alternate_routes']
 
                 directions_url = 'https://maps.googleapis.com/maps/api/directions/json'
                 directions_params = {
                     'origin': source,
                     'destination': destination,
-                    'key': self.GOOGLE_MAPS_API_KEY
+                    'key': self.GOOGLE_MAPS_API_KEY,
+                    'alternatives': 'true' if alternate_routes else 'false'
                 }
                 directions_response = requests.get(directions_url, params=directions_params)
                 directions_response.raise_for_status()  # Raise HTTPError for bad responses
@@ -46,7 +50,7 @@ class WeatherRouteApp:
 
                 cities_weather = []
                 for city in cities:
-                    weather = self.get_city_weather(city)
+                    weather = self.get_city_weather(city, travel_time)
                     if weather:
                         cities_weather.append({
                             'city': city,
@@ -79,7 +83,23 @@ class WeatherRouteApp:
                 previous_point = point
                 distance_accumulated = 0
 
+            # Add intermediate points
+            while distance_accumulated >= 30:
+                intermediate_point = self.calculate_intermediate_point(previous_point, point, 30)
+                city_info = self.get_city_info(intermediate_point)
+                if city_info:
+                    cities.append(city_info)
+                previous_point = intermediate_point
+                distance_accumulated -= 30
+
         return cities
+
+    def calculate_intermediate_point(self, start, end, distance):
+        total_distance = geodesic(start, end).miles
+        ratio = distance / total_distance
+        lat = start[0] + (end[0] - start[0]) * ratio
+        lng = start[1] + (end[1] - start[1]) * ratio
+        return (lat, lng)
 
     def get_city_info(self, location):
         lat, lng = location
@@ -98,21 +118,25 @@ class WeatherRouteApp:
                         return component['long_name']
         return None
 
-    def get_city_weather(self, city):
+    def get_city_weather(self, city, travel_time):
         try:
+            # Parse travel_time and find the closest forecast time
+            travel_datetime = datetime.fromisoformat(travel_time)
             url = f'https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={self.OPENWEATHERMAP_API_KEY}&units=metric'
             response = requests.get(url)
             response.raise_for_status()
             weather_data = response.json()
 
-            # Extract the weather information for the next 5 hours or the specified travel time
+            # Find the closest forecast to the travel time
             weather_info = []
-            for forecast in weather_data['list'][:5]:  # Limit to the next 5 forecasts (next 15 hours)
-                weather_info.append({
-                    'time': forecast['dt_txt'],
-                    'weather': forecast['weather'][0]['description'],
-                    'temperature': forecast['main']['temp']
-                })
+            for forecast in weather_data['list']:
+                forecast_time = datetime.fromisoformat(forecast['dt_txt'].replace('Z', '+00:00'))
+                if abs((forecast_time - travel_datetime).total_seconds()) < 3600:  # within 1 hour
+                    weather_info.append({
+                        'time': forecast['dt_txt'],
+                        'weather': forecast['weather'][0]['description'],
+                        'temperature': forecast['main']['temp']
+                    })
 
             return weather_info
         except Exception as e:
