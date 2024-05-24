@@ -61,6 +61,26 @@ class WeatherRouteApp:
                 self.app.logger.error(f"Error in get_route: {e}")
                 return jsonify({'error': str(e)}), 500
 
+    # def extract_cities_from_route(self, steps):
+    #     waypoints = [(step['end_location']['lat'], step['end_location']['lng']) for step in steps]
+
+    #     cities = []
+    #     previous_point = waypoints[0]
+    #     distance_accumulated = 0
+
+    #     for point in waypoints[1:]:
+    #         distance = geodesic(previous_point, point).miles
+    #         distance_accumulated += distance
+
+    #         if distance_accumulated >= 30:
+    #             city_info = self.get_city_info(point)
+    #             if city_info:
+    #                 cities.append(city_info)
+    #             previous_point = point
+    #             distance_accumulated = 0
+
+    #     return cities
+
     def extract_cities_from_route(self, steps):
         waypoints = [(step['end_location']['lat'], step['end_location']['lng']) for step in steps]
 
@@ -79,7 +99,23 @@ class WeatherRouteApp:
                 previous_point = point
                 distance_accumulated = 0
 
+            # Add intermediate points
+            while distance_accumulated >= 30:
+                intermediate_point = self.calculate_intermediate_point(previous_point, point, 30)
+                city_info = self.get_city_info(intermediate_point)
+                if city_info:
+                    cities.append(city_info)
+                previous_point = intermediate_point
+                distance_accumulated -= 30
+
         return cities
+
+    def calculate_intermediate_point(self, start, end, distance):
+        total_distance = geodesic(start, end).miles
+        ratio = distance / total_distance
+        lat = start[0] + (end[0] - start[0]) * ratio
+        lng = start[1] + (end[1] - start[1]) * ratio
+        return (lat, lng)
 
     def get_city_info(self, location):
         lat, lng = location
