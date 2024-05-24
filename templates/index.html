@@ -6,7 +6,7 @@
     <title>Route and Weather Information</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
     <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&libraries=places"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&libraries=places,directions"></script>
 </head>
 <body>
     <div class="container mt-5">
@@ -20,7 +20,15 @@
                 <label for="destination">Destination:</label>
                 <input type="text" class="form-control" id="destination" name="destination" required>
             </div>
-            <button type="submit" class="btn btn-primary">Get Route and Weather</button>
+            <div class="form-group">
+                <label for="travel_time">Travel Time:</label>
+                <input type="datetime-local" class="form-control" id="travel_time" name="travel_time" required>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="alternate_routes" name="alternate_routes">
+                <label class="form-check-label" for="alternate_routes">Show Alternate Routes</label>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Get Route and Weather</button>
         </form>
         <div class="mt-4" id="results"></div>
         <div id="map" style="height: 500px; margin-top: 20px;"></div>
@@ -31,6 +39,8 @@
         let directionsService;
         let directionsRenderer;
         let markers = [];
+        let autocompleteSource;
+        let autocompleteDestination;
 
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
@@ -40,6 +50,10 @@
             directionsService = new google.maps.DirectionsService();
             directionsRenderer = new google.maps.DirectionsRenderer();
             directionsRenderer.setMap(map);
+
+            // Initialize autocomplete for source and destination inputs
+            autocompleteSource = new google.maps.places.Autocomplete(document.getElementById('source'));
+            autocompleteDestination = new google.maps.places.Autocomplete(document.getElementById('destination'));
         }
 
         function addMarker(location, infoContent) {
@@ -56,12 +70,13 @@
             markers.push(marker);
         }
 
-        function calculateAndDisplayRoute(source, destination) {
+        function calculateAndDisplayRoute(source, destination, provideAlternateRoutes) {
             directionsService.route(
                 {
                     origin: source,
                     destination: destination,
-                    travelMode: 'DRIVING'
+                    travelMode: 'DRIVING',
+                    provideRouteAlternatives: provideAlternateRoutes
                 },
                 function(response, status) {
                     if (status === 'OK') {
@@ -80,8 +95,10 @@
                 event.preventDefault();
                 const source = $('#source').val();
                 const destination = $('#destination').val();
+                const travel_time = $('#travel_time').val();
+                const alternate_routes = $('#alternate_routes').is(':checked');
                 
-                calculateAndDisplayRoute(source, destination);
+                calculateAndDisplayRoute(source, destination, alternate_routes);
 
                 $.ajax({
                     url: '/getRoute',
@@ -89,7 +106,9 @@
                     contentType: 'application/json',
                     data: JSON.stringify({
                         source: source,
-                        destination: destination
+                        destination: destination,
+                        travel_time: travel_time,
+                        alternate_routes: alternate_routes
                     }),
                     success: function(data) {
                         const citiesWeather = data.cities_weather;
