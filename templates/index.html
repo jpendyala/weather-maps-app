@@ -3,102 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weather Route App</title>
-    <script>
-        const apiKey = "{{ api_key }}";
-    </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&callback=initMap" async defer></script>
-
-    <script>
-        function initMap() {
-            const map = new google.maps.Map(document.getElementById("map"), {
-                zoom: 6,
-                center: { lat: 41.8781, lng: -93.0977 }  // Centered on Iowa for example
-            });
-
-            document.getElementById('routeForm').addEventListener('submit', function (event) {
-                event.preventDefault();
-                fetchRoute(map);
-            });
-        }
-
-        function fetchRoute(map) {
-            const source = document.getElementById('source').value;
-            const destination = document.getElementById('destination').value;
-
-            fetch('/getRoute', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: `source=${source}&destination=${destination}`
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert(data.error);
-                        return;
-                    }
-
-                    const route = data.route;
-                    const decodedPath = google.maps.geometry.encoding.decodePath(route);
-
-                    const polyline = new google.maps.Polyline({
-                        path: decodedPath,
-                        geodesic: true,
-                        strokeColor: '#FF0000',
-                        strokeOpacity: 1.0,
-                        strokeWeight: 2
-                    });
-
-                    polyline.setMap(map);
-
-                    const citiesWeather = data.cities_weather;
-                    citiesWeather.forEach(cityWeather => {
-                        const city = cityWeather.city;
-                        const weather = cityWeather.weather;
-
-                        // Fetch lat-lon for the city to place markers
-                        fetch(`/getCityLatLon?city=${city}`)
-                            .then(response => response.json())
-                            .then(location => {
-                                const marker = new google.maps.Marker({
-                                    position: { lat: location.lat, lng: location.lng },
-                                    map: map,
-                                    title: city
-                                });
-
-                                const infowindow = new google.maps.InfoWindow({
-                                    content: `<strong>${city}</strong><br>${weather.map(w => `${w.time}: ${w.temperature}°${w.temperatureUnit}, ${w.shortForecast}`).join('<br>')}`
-                                });
-
-                                marker.addListener('click', () => {
-                                    infowindow.open(map, marker);
-                                });
-                            });
-                    });
-                })
-                .catch(error => console.error('Error fetching route:', error));
-        }
-
-        window.onload = initMap;
-    </script>
-    <style>
-        #map {
-            height: 500px;
-            width: 100%;
-        }
-    </style>
+    <title>Route and Weather Information</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&libraries=places"></script>
 </head>
 <body>
-    <h1>Weather Route App</h1>
-    <form id="routeForm">
-        <label for="source">Source:</label>
-        <input type="text" id="source" name="source" required><br><br>
-        <label for="destination">Destination:</label>
-        <input type="text" id="destination" name="destination" required><br><br>
-        <button type="submit">Get Route</button>
-    </form>
-    <div id="map"></div>
+    <div class="container mt-5">
+        <h1 class="text-center">Route and Weather Information</h1>
+        <form id="routeForm" class="mt-4">
+            <div class="form-group">
+                <label for="source">Source:</label>
+                <input type="text" class="form-control" id="source" name="source" required>
+            </div>
+            <div class="form-group">
+                <label for="destination">Destination:</label>
+                <input type="text" class="form-control" id="destination" name="destination" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Get Route and Weather</button>
+        </form>
+        <div class="mt-4" id="results"></div>
+        <div id="map" style="height: 500px; margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        let map;
+        let directionsService;
+        let directionsRenderer;
+        let markers = [];
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 6,
+                center: {lat: 40.7128, lng: -74.0060} // Centered at New York initially
+            });
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+        }
+
+        function addMarker(location, infoContent) {
+            const marker = new google.maps.Marker({
+                position: location,
+                map: map
+            });
+            const infowindow = new google.maps.InfoWindow({
+                content: infoContent
+            });
+            marker.addListener('click', function() {
+                infowindow.open(map, marker);
+            });
+            markers.push(marker);
+        }
+
+        function calculateAndDisplayRoute(source, destination) {
+            directionsService.route(
+                {
+                    origin: source,
+                    destination: destination,
+                    travelMode: 'DRIVING'
+                },
+                function(response, status) {
+                    if (status === 'OK') {
+                        directionsRenderer.setDirections(response);
+                    } else {
+                        window.alert('Directions request failed due to ' + status);
+                    }
+                }
+            );
+        }
+
+        $(document).ready(function() {
+            initMap();
+
+            $('#routeForm').on('submit', function(event) {
+                event.preventDefault();
+                const source = $('#source').val();
+                const destination = $('#destination').val();
+                
+                calculateAndDisplayRoute(source, destination);
+
+                $.ajax({
+                    url: '/getRoute',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        source: source,
+                        destination: destination
+                    }),
+                    success: function(data) {
+                        const citiesWeather = data.cities_weather;
+                        let results = '<h3>Weather Information</h3>';
+                        
+                        citiesWeather.forEach(function(cityWeather) {
+                            let weatherInfo = '<h4>' + cityWeather.city + '</h4>';
+                            cityWeather.weather.forEach(function(weather) {
+                                weatherInfo += '<p>' + weather.time + ': ' + weather.weather + ', ' + weather.temperature + '°C</p>';
+                            });
+
+                            results += weatherInfo;
+
+                            const geocodeUrl = 'https://maps.googleapis.com/maps/api/geocode/json?address=' + cityWeather.city + '&key={{ api_key }}';
+                            $.getJSON(geocodeUrl, function(geocodeData) {
+                                if (geocodeData.results && geocodeData.results[0]) {
+                                    const location = geocodeData.results[0].geometry.location;
+                                    addMarker(location, weatherInfo);
+                                } else {
+                                    console.error('Geocoding failed: ', geocodeData);
+                                }
+                            });
+                        });
+
+                        $('#results').html(results);
+                    },
+                    error: function(xhr, status, error) {
+                        $('#results').html('<div class="alert alert-danger">Error: ' + xhr.responseText + '</div>');
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>
