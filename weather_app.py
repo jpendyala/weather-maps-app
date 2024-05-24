@@ -61,25 +61,28 @@ class WeatherRouteApp:
                 self.app.logger.error(f"Error in get_route: {e}")
                 return jsonify({'error': str(e)}), 500
 
-    # def extract_cities_from_route(self, steps):
-    #     waypoints = [(step['end_location']['lat'], step['end_location']['lng']) for step in steps]
+    from geopy.distance import geodesic
 
-    #     cities = []
-    #     previous_point = waypoints[0]
-    #     distance_accumulated = 0
+    def calculate_total_distance(self, route):
+        total_distance = 0
+        for i in range(len(route) - 1):
+            total_distance += geodesic(route[i], route[i+1]).miles
+        return total_distance
 
-    #     for point in waypoints[1:]:
-    #         distance = geodesic(previous_point, point).miles
-    #         distance_accumulated += distance
+    def calculate_point(self, route, distance):
+        total_distance = 0
+        for i in range(len(route) - 1):
+            segment_distance = geodesic(route[i], route[i+1]).miles
+            if total_distance + segment_distance > distance:
+                ratio = (distance - total_distance) / segment_distance
+                lat = route[i][0] + (route[i+1][0] - route[i][0]) * ratio
+                lng = route[i][1] + (route[i+1][1] - route[i][1]) * ratio
+                return {'lat': lat, 'lng': lng}
+            total_distance += segment_distance
+        return None
 
-    #         if distance_accumulated >= 30:
-    #             city_info = self.get_city_info(point)
-    #             if city_info:
-    #                 cities.append(city_info)
-    #             previous_point = point
-    #             distance_accumulated = 0
-
-    #     return cities
+    from geopy.geocoders import Nominatim
+    from geopy.distance import geodesic
 
     def extract_cities_from_route(self, steps):
         waypoints = [(step['end_location']['lat'], step['end_location']['lng']) for step in steps]
@@ -116,6 +119,7 @@ class WeatherRouteApp:
         lat = start[0] + (end[0] - start[0]) * ratio
         lng = start[1] + (end[1] - start[1]) * ratio
         return (lat, lng)
+
 
     def get_city_info(self, location):
         lat, lng = location
